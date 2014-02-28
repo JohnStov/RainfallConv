@@ -12,7 +12,6 @@ namespace RainfallConv
 
         enum State
         {
-            Beginning,
             FindingStart,
             FindingDuration,
             FindingEnd,
@@ -20,12 +19,12 @@ namespace RainfallConv
         }
 
         private long padItems;
-        DateTime startTime = DateTime.MinValue;
+        DateTime startTime = DateTime.Parse("01/01/1971 00:00");
         double duration = 0.0;
 
         public IEnumerable<string> ParseLines(IEnumerable<string> lines)
         {
-            var state = State.Beginning;
+            var state = State.FindingStart;
 
             foreach (var line in lines)
             {
@@ -41,18 +40,16 @@ namespace RainfallConv
                 if (output != null)
                     yield return output;
             }
+
+            CalculatePadding(DateTime.Parse("01/01/1972 00:00"));
+            for (int i = 0; i < padItems; ++i)
+                yield return "0.000";
         }
 
         private string ParseLine(string line, ref State state)
         {
             switch (state)
             {
-                case State.Beginning:
-                    var start =  GetNextDate(line, ref state);
-                    if (start.HasValue)
-                        startTime = start.Value;
-                    return null;
-
                 case State.FindingDuration:
                     var length =  GetNextDuration(line, ref state);
                     if (length.HasValue)
@@ -66,8 +63,7 @@ namespace RainfallConv
                     var nextDate = GetNextDate(line, ref state);
                     if (nextDate.HasValue)
                     {
-                        var padLength = nextDate.Value - startTime;
-                        padItems = (long)(padLength.TotalHours - duration) * 12;
+                        padItems = CalculatePadding(nextDate.Value);
                         startTime = nextDate.Value;
                     }
                     return null;
@@ -75,6 +71,12 @@ namespace RainfallConv
                 default:
                     return null;
             }
+        }
+
+        private long CalculatePadding(DateTime nextDate)
+        {
+            var padLength = nextDate - startTime;
+            return (long) (padLength.TotalHours - duration)*12;
         }
 
         private string CopyValue(string line, ref State state)
@@ -112,10 +114,7 @@ namespace RainfallConv
             var match = dateRegex.Match(line);
             if (match.Success)
             {
-                if (state == State.FindingStart)
-                    state = State.Padding;
-                else
-                    state = State.FindingDuration;
+                state = State.Padding;
                 return DateTime.Parse(match.Groups[1].Value);
             }
 
