@@ -20,9 +20,11 @@ namespace RainfallConv
 
         private long padItems;
         DateTime startTime = DateTime.Parse("01/01/1971 00:00");
-        double duration = 0.0;
+        DateTime currentTime = DateTime.Parse("01/01/1971 00:00");
+        double expectedDuration = 0.0;
+        long copiedItems = 0;
 
-        public IEnumerable<string> ParseLines(IEnumerable<string> lines)
+        public IEnumerable<Tuple<DateTime, double>> ParseLines(IEnumerable<string> lines)
         {
             var state = State.FindingStart;
 
@@ -33,7 +35,7 @@ namespace RainfallConv
                 if (state == State.Padding)
                 {
                     for (int i = 0; i < padItems; ++i)
-                        yield return "0.000";
+                        yield return GetLineValue("0.000");
                     state = State.FindingDuration;
                 }
 
@@ -41,19 +43,20 @@ namespace RainfallConv
                     yield return output;
             }
 
-            CalculatePadding(DateTime.Parse("01/01/1972 00:00"));
+            padItems = CalculatePadding(DateTime.Parse("01/01/2001 00:00"));
             for (int i = 0; i < padItems; ++i)
-                yield return "0.000";
+                yield return GetLineValue("0.000");
         }
 
-        private string ParseLine(string line, ref State state)
+        private Tuple<DateTime, double> ParseLine(string line, ref State state)
         {
             switch (state)
             {
                 case State.FindingDuration:
+                    copiedItems = 0;
                     var length =  GetNextDuration(line, ref state);
                     if (length.HasValue)
-                        duration = length.Value;
+                        expectedDuration = length.Value;
                     return null;
 
                 case State.FindingEnd:
@@ -76,12 +79,24 @@ namespace RainfallConv
         private long CalculatePadding(DateTime nextDate)
         {
             var padLength = nextDate - startTime;
-            return (long) (padLength.TotalHours - duration)*12;
+            var hours = padLength.TotalHours;
+            var spanItems = (long)(hours * 12.0);
+
+            if (spanItems < copiedItems)
+            {
+                var eventDuration = TimeSpan.FromHours(copiedItems/12.0);
+                var eventFinish = startTime + eventDuration;
+                Console.WriteLine("Bad Data: Event at {0} finished at {1}, next event starts at {2}", startTime, eventFinish, nextDate);
+            }
+
+            var paddingItems = spanItems - copiedItems;
+
+            return paddingItems;
         }
 
-        private string CopyValue(string line, ref State state)
+        private Tuple<DateTime, double> CopyValue(string line, ref State state)
         {
-            string result = null;
+            Tuple<DateTime, double> result = null;
             
             var match = endOrValueRegex.Match(line);
             if (!match.Success)
@@ -90,16 +105,33 @@ namespace RainfallConv
             {
                 var value = match.Groups[1].Value;
                 if (value == "END")
+                {
                     state = State.FindingStart;
+                    if (copiedItems != (int)(expectedDuration * 12))
+                    {
+                        Console.WriteLine("Event at {0}: Expected duration {1} hour(s), Real duration {2} hour(s)", startTime, expectedDuration, copiedItems / 12.0);
+                    }
+                }
                 else
-                    result = value;
+                {
+                    ++copiedItems;
+                    result = GetLineValue(value);
+                }
             }
 
             return result;
         }
 
+        private Tuple<DateTime, double> GetLineValue(string value)
+        {
+            var result = new Tuple<DateTime, double>(currentTime, double.Parse(value));
+            currentTime = currentTime + TimeSpan.FromMinutes(5);
+            return result;
+        }
+        
         private double? GetNextDuration(string line, ref State state)
         {
+            currentTime = startTime;
             var match = durationRegex.Match(line);
             if (match.Success)
             {
@@ -115,7 +147,8 @@ namespace RainfallConv
             if (match.Success)
             {
                 state = State.Padding;
-                return DateTime.Parse(match.Groups[1].Value);
+                var result = DateTime.Parse(match.Groups[1].Value);
+               return result;
             }
 
             return null;
