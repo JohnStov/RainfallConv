@@ -30,7 +30,7 @@ namespace RainfallConv
             sortedKeys.Sort();
 
             foreach(var key in sortedKeys)
-                writer.WriteLine(string.Format("{0},{1}", key, values[key]));
+                writer.WriteLine(string.Format("{0},{1:0.000}", key.Month, values[key]));
             
             writer.Flush();
             writer.Dispose();
